@@ -62,6 +62,7 @@ class ImportSource extends ImportSourceHook
                     'tags.aws:cloudformation:logical-id',
                     'tags.aws:cloudformation:stack-id',
                     'tags.aws:cloudformation:stack-name',
+                    'tags.elasticbeanstalk:environment-name',
                 );
             case 'lb':
                 return array(
@@ -95,6 +96,7 @@ class ImportSource extends ImportSourceHook
                     'tags.aws:cloudformation:logical-id',
                     'tags.aws:cloudformation:stack-id',
                     'tags.aws:cloudformation:stack-name',
+                    'tags.elasticbeanstalk:environment-name',
                 );
         }
     }
