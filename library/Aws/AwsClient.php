@@ -30,10 +30,11 @@ class AwsClient
 
             $objects[] = $object = $this->extractAttributes($entry, array(
                 'name'              => 'AutoScalingGroupName',
-                'launch_config'     => 'LaunchConfigurationName',
                 'zones'             => 'AvailabilityZones',
                 'lb_names'          => 'LoadBalancerNames',
                 'health_check_type' => 'HealthCheckType',
+            ), array(
+                'launch_config'     => 'LaunchConfigurationName',
             ));
 
             $object->ctime        = strtotime($entry['CreatedTime']);
