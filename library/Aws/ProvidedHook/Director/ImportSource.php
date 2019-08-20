@@ -6,26 +6,41 @@ use Icinga\Module\Director\Hook\ImportSourceHook;
 use Icinga\Module\Director\Web\Form\QuickForm;
 use Icinga\Module\Aws\AwsClient;
 use Icinga\Module\Aws\AwsKey;
-use Icinga\Application\Benchmark;
 
 class ImportSource extends ImportSourceHook
 {
+    protected static $awsObjectTypes = array(
+        'asg'         => 'Auto Scaling Groups',
+        'lb'          => 'Elastic Load Balancers',
+        'lbv2'        => 'Elastic Load Balancers V2',
+        'ec2instance' => 'EC2 Instances',
+        'rdsinstance' => 'RDS Instances'
+    );
+
     protected $db;
 
     public function fetchData()
     {
-        $client = new AwsClient(
-            AwsKey::loadByName($this->getSetting('aws_access_key')),
-            $this->getSetting('aws_region')
-        );
+        $keyName = $this->getSetting('aws_access_key');
+        $key = null;
+
+        if ($keyName) {
+            $key = AwsKey::loadByName($keyName);
+        }
+
+        $client = new AwsClient($key, $this->getSetting('aws_region'));
 
         switch ($this->getObjectType()) {
             case 'asg':
                 return $client->getAutoscalingConfig();
             case 'lb':
                 return $client->getLoadBalancers();
+            case 'lbv2':
+                return $client->getLoadBalancersV2();
             case 'ec2instance':
                 return $client->getEc2Instances();
+            case 'rdsinstance':
+                return $client->getRdsInstances();
         }
     }
 
@@ -33,7 +48,10 @@ class ImportSource extends ImportSourceHook
     {
         // Compat for old configs, asg used to be the only available type:
         $type = $this->getSetting('object_type', 'asg');
-        if (! in_array($type, array('asg', 'lb', 'ec2instance'))) {
+
+        $validTypes = array_keys(static::$awsObjectTypes);
+
+        if (! in_array($type, $validTypes)) {
             throw new ConfigurationError(
                 'Got no invalid AWS object type: "%s"',
                 $type
@@ -74,6 +92,26 @@ class ImportSource extends ImportSourceHook
                     'listeners',
                     'health_check',
                 );
+            case 'lbv2':
+                return array(
+                    'name',
+                    'dnsname',
+                    'scheme',
+                    'zones',
+                    'type',
+                    'scheme',
+                    'state',
+                    'security_groups'
+                );
+            case 'rdsinstance':
+                return array(
+                    'name',
+                    'port',
+                    'fqdn',
+                    'engine',
+                    'version',
+                    'security_groups',
+                );
             case 'ec2instance':
                 return array(
                     'name',
@@ -84,13 +122,17 @@ class ImportSource extends ImportSourceHook
                     'hypervisor',
                     'instance_type',
                     'virt_type',
+                    'vpc_id',
                     'public_ip',
                     'public_dns',
                     'private_ip',
                     'private_dns',
+                    'disabled',
                     'monitoring_state',
                     'security_groups',
                     'status',
+                    'subnet_id',
+                    'launch_time',
                     'tags',
                     'tags.Name',
                     'tags.aws:autoscaling:groupName',
@@ -117,13 +159,15 @@ class ImportSource extends ImportSourceHook
         ));
 
         $form->addElement('select', 'aws_access_key', array(
-            'label'        => 'AWS access key',
-            'required'     => true,
+            'label'        => 'AWS access method',
+            'required'     => false,
             'description'  => $form->translate(
-                'Your AWS key, this shows all keys from your keys.ini. Please'
-                . ' check the documentation in case this list is empty'
+                'Use IAM role credential or select your AWS key. This shows all keys from your keys.ini.'
+                . ' Please check the documentation if you miss the keys in the list.'
             ),
-            'multiOptions' => $form->optionalEnum(AwsKey::enumKeyNames()),
+            'multiOptions' => $form->optionalEnum(AwsKey::enumKeyNames(), $form->translate(
+                'IAM role credentials'
+            )),
             'class'        => 'autosubmit',
         ));
 
@@ -140,12 +184,17 @@ class ImportSource extends ImportSourceHook
         ));
     }
 
-    protected static function enumObjectTypes($form)
+    protected static function enumObjectTypes(QuickForm $form)
     {
-        return array(
-            'asg'         => $form->translate('Auto Scaling Groups'),
-            'lb'          => $form->translate('Elastic Load Balancers'),
-            'ec2instance' => $form->translate('EC2 Instances'),
-        );
+        static $enumerationTypes = null;
+
+        if ($enumerationTypes === null) {
+            $enumerationTypes = array();
+            foreach (static::$awsObjectTypes as $key => $label) {
+                $enumerationTypes[$key] = $form->translate($label);
+            }
+        }
+
+        return $enumerationTypes;
     }
 }

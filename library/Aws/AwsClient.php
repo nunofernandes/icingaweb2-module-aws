@@ -2,16 +2,20 @@
 
 namespace Icinga\Module\Aws;
 
-use Aws\Common\Aws;
+use Aws\Api\DateTimeResult;
+use Aws\Sdk;
 use Icinga\Application\Config;
 
 class AwsClient
 {
     protected $key;
 
-    protected $client;
-
     protected $region;
+
+    /**
+     * @var Sdk
+     */
+    protected $sdk;
 
     public function __construct(AwsKey $key, $region)
     {
@@ -23,7 +27,7 @@ class AwsClient
     public function getAutoscalingConfig()
     {
         $objects = array();
-        $client = $this->client()->get('AutoScaling');
+        $client = $this->sdk()->createAutoScaling();
         $res = $client->describeAutoScalingGroups();
 
         foreach ($res->get('AutoScalingGroups') as $entry) {
@@ -49,7 +53,7 @@ class AwsClient
 
     public function getLoadBalancers()
     {
-        $client = $this->client()->get('ElasticLoadBalancing');
+        $client = $this->sdk()->createElasticLoadBalancing();
         $res = $client->describeLoadBalancers();
         $objects = array();
         foreach ($res->get('LoadBalancerDescriptions') as $entry) {
@@ -80,9 +84,33 @@ class AwsClient
         return $this->sortByName($objects);
     }
 
+    public function getLoadBalancersV2()
+    {
+        $client = $this->sdk()->createElasticLoadBalancingV2();
+        $res = $client->describeLoadBalancers();
+        $objects = array();
+
+        foreach ($res['LoadBalancers'] as $entry) {
+            $objects[] = $object = $this->extractAttributes($entry, array(
+                'name'    => 'LoadBalancerName',
+                'dnsname' => 'DNSName',
+                'scheme'  => 'Scheme',
+                'zones'   => 'AvailabilityZones',
+                'type'    => 'Type',
+                'scheme'  => 'Scheme'
+            ), array(
+                'security_groups' => 'SecurityGroups'
+            ));
+
+            $object->state = $entry['State']['Code'];
+        }
+
+        return $this->sortByName($objects);
+    }
+
     public function getEc2Instances()
     {
-        $client = $this->client()->get('Ec2');
+        $client = $this->sdk()->createEc2();
         $res = $client->describeInstances();
         $objects = array();
         foreach ($res->get('Reservations') as $reservation) {
@@ -95,6 +123,7 @@ class AwsClient
                     'hypervisor'       => 'Hypervisor',
                     'virt_type'        => 'VirtualizationType',
                 ), array(
+                    'vpc_id'           => 'VpcId',
                     'root_device_type' => 'RootDeviceType',
                     'root_device_name' => 'RootDeviceName',
                     'public_ip'        => 'PublicIpAddress',
@@ -102,10 +131,13 @@ class AwsClient
                     'private_ip'       => 'PrivateIpAddress',
                     'private_dns'      => 'PrivateDnsName',
                     'instance_type'    => 'InstanceType',
+                    'subnet_id'        => 'SubnetId'
                 ));
 
+                $object->disabled         = $entry['State']['Name'] != 'running';
                 $object->monitoring_state = $entry['Monitoring']['State'];
                 $object->status           = $entry['State']['Name'];
+                $object->launch_time      = (string)$entry['LaunchTime'];
                 $object->security_groups  = [];
 
                 foreach ($entry['SecurityGroups'] as $group)
@@ -115,6 +147,33 @@ class AwsClient
 
                 $this->extractTags($entry, $object);
             }
+        }
+
+        return $this->sortByName($objects);
+    }
+
+    public function getRdsInstances()
+    {
+        $client = $this->sdk()->createRds();
+        $res = $client->describeDBInstances();
+        $objects = array();
+        foreach ($res['DBInstances'] as $entry) {
+            $objects[] = $object = $this->extractAttributes($entry, array(
+                'name'    => 'DBInstanceIdentifier',
+                'engine'  => 'Engine',
+                'version' => 'EngineVersion',
+            ));
+
+            $object->port = $entry['Endpoint']['Port'];
+            $object->fqdn = $entry['Endpoint']['Address'];
+            $object->security_groups  = [];
+
+            foreach ($entry['VpcSecurityGroups'] as $group)
+            {
+                $object->security_groups[] = $group['VpcSecurityGroupId'];
+            }
+
+            $this->extractTags($entry, $object);
         }
 
         return $this->sortByName($objects);
@@ -186,21 +245,28 @@ class AwsClient
         return strcmp($a->name, $b->name);
     }
 
-    protected function client()
+    /**
+     * @return Sdk
+     */
+    protected function sdk()
     {
-        if ($this->client === null) {
-            $this->initializeClient();
+        if ($this->sdk === null) {
+            $this->initializeSdk();
         }
 
-        return $this->client;
+        return $this->sdk;
     }
 
-    protected function initializeClient()
+    protected function initializeSdk()
     {
         $params = array(
+            'version' => 'latest',
             'region'  => $this->region,
-            'credentials' => $this->key->getCredentials(),
         );
+
+        if ($this->key instanceof AwsKey) {
+            $params['credentials'] = $this->key->getCredentials();
+        }
 
         $config = Config::module('aws');
         if ($proxy = $config->get('network', 'proxy')) {
@@ -213,11 +279,28 @@ class AwsClient
             $params['ssl.certificate_authority'] = $ca;
         }
 
-        $this->client = Aws::factory($params);
+        $this->sdk = new Sdk($params);
     }
 
     protected function prepareAwsLibs()
     {
-        require_once dirname(__DIR__) . '/vendor/aws/aws-autoloader.php';
+        if (class_exists('\Aws\Sdk')) {
+            return;
+        }
+
+        $autoloaderFiles = array(
+            dirname(__DIR__) . '/vendor/aws/aws-autoloader.php', // manual sdk installation
+            dirname(__DIR__) . '/vendor/autoload.php',           // composer installation
+        );
+
+        foreach ($autoloaderFiles as $file) {
+            if (file_exists($file)) {
+                require_once $file;
+            }
+        }
+
+        if (! class_exists('\Aws\Sdk')) {
+            throw new \RuntimeException('AWS SDK not found (Class \Aws\Sdk not found)');
+        }
     }
 }

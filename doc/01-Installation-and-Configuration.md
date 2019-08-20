@@ -4,11 +4,7 @@
 Requirements
 ------------
 
-This module needs the [AWS PHP SDK v2](http://docs.aws.amazon.com/aws-sdk-php/v2/guide/).
-The newer v3 requires PHP 5.5, a version not available without 3rd party
-(or SCL) repositories on many Enterprise Linux distributions as of this
-writing. So to make life easier for many people we decided to work with
-the older SDK.
+This module needs the [AWS PHP SDK v3](https://docs.aws.amazon.com/sdk-for-php/v3/developer-guide/welcome.html).
 
 Module installation
 -------------------
@@ -17,24 +13,39 @@ Please extract or clone this module to your Icinga Web 2 module path. The
 directory name must fit the module name, `aws`. This would usually lead to
 `/usr/share/icingaweb2/modules/aws`.
 
-Download AWS SDK
+Install AWS SDK
 ----------------
 
-Next please download and extract the [latest v2](https://github.com/aws/aws-sdk-php/releases/download/2.8.30/aws.zip) standalone ZIP archive from
+#### Via Composer
+
+For this you need [Composer](https://getcomposer.org/) on your machine. 
+In `/icingaweb2/modules/aws`, run `composer install` and all modules dependencies will be installed. 
+
+#### Manual Install
+
+Next please download and extract the latest v3 standalone ZIP archive from
 the AWS PHP SDK [releases](https://github.com/aws/aws-sdk-php/releases) page.
-You need to extract the AWS PHP SDK v2 to `library/vendor/aws`.
+You need to extract the AWS PHP SDK v3 to `library/vendor/aws`.
+
+AWS IAM role credentials
+------------------------
+
+If you run Icinga Web on AWS you can use IAM roles to allow access. This is the
+default and there is nothing to configure. Select IAM role and configure access
+in AWS itself. 
+
 
 AWS key configuration
 ---------------------
 
-The last required step is to provide at least one AWS access key in `keys.ini`.
-Create a file `/etc/icingaweb2/modules/aws/keys.ini` as follows:
+If you want to use access keys you need to have at least one key in `keys.ini`.
+The easiest way to do that, is by going to the key configuration tab in `Icinga Web 2` under `Configuration > Modules > aws > AWS Keys`:
 
-```ini
-[My readonly AWS key]
-access_key_id = RANDOMANFASDFNASDOFA
-secret_access_key = WhatASDmn0asdnfASNDInafsdofdasJ980hansdf
-```
+![AWS key config](img/10_aws_key_config.png)
+
+After that just click `Add a AWS Access Key`, choose a name and add your key details:
+
+![AWS add key](img/11_aws_add_key.png)
 
 That's it. Now you are ready to enable the AWS module and you'll find a new
 Import Source in your Icinga Director frontend. You are now ready to skip to
